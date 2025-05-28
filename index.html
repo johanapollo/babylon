@@ -2,91 +2,153 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Babylon.js Ragdoll Demo</title>
+  <title>Three.js + Cannon-es Ragdoll</title>
   <style>
-    html, body, #renderCanvas {
-      width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden;
-    }
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; }
   </style>
-  <!-- Babylon core -->
-  <script src="https://cdn.babylonjs.com/babylon.js"></script>
-  <!-- Correct Oimo.js physics engine (defines global OIMO) -->
-  <script src="https://preview.babylonjs.com/Oimo.js"></script>
-  <!-- Ragdoll.js library from the GitHub repo -->
-  <script src="https://cdn.jsdelivr.net/gh/jongomez/ragdoll.js@main/ragdoll.js"></script>
 </head>
 <body>
-  <canvas id="renderCanvas"></canvas>
-  <script>
-    const canvas = document.getElementById("renderCanvas");
-    const engine = new BABYLON.Engine(canvas, true);
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.module.js';
+import { OrbitControls } from 'https://cdn.jsdelivr.net/npm/three@0.152.2/examples/jsm/controls/OrbitControls.js';
+import * as CANNON from 'https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js';
 
-    const createScene = () => {
-      const scene = new BABYLON.Scene(engine);
+//── Scene + Renderer ──────────────────────────────────────────
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x222222);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
 
-      // enable physics with OimoJS, injecting the global OIMO
-      scene.enablePhysics(
-        new BABYLON.Vector3(0, -9.81, 0),
-        new BABYLON.OimoJSPlugin(undefined, OIMO)
-      );
+//── Camera + Controls ────────────────────────────────────────
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.1, 1000);
+camera.position.set(0, 3, 8);
+new OrbitControls(camera, renderer.domElement);
 
-      // camera & light
-      const camera = new BABYLON.ArcRotateCamera(
-        "cam",
-        -Math.PI / 2,
-        Math.PI / 2.5,
-        10,
-        BABYLON.Vector3.Zero(),
-        scene
-      );
-      camera.attachControl(canvas, true);
-      new BABYLON.HemisphericLight("hemi", new BABYLON.Vector3(0, 1, 0), scene);
+//── Lights ───────────────────────────────────────────────────
+scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1));
+const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+dir.position.set(5, 10, 2);
+scene.add(dir);
 
-      // ground
-      const ground = BABYLON.MeshBuilder.CreateGround(
-        "ground",
-        { width: 20, height: 20 },
-        scene
-      );
-      ground.physicsImpostor = new BABYLON.PhysicsImpostor(
-        ground,
-        BABYLON.PhysicsImpostor.BoxImpostor,
-        { mass: 0, restitution: 0.5 },
-        scene
-      );
+//── Physics World ───────────────────────────────────────────
+const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.82, 0) });
+world.broadphase = new CANNON.SAPBroadphase(world);
+world.allowSleep = true;
 
-      // load the Vita model (VRoid) and set up ragdoll
-      BABYLON.SceneLoader.Append(
-        "https://cdn.jsdelivr.net/gh/jongomez/ragdoll.js@main/model/",
-        "vita.glb",
-        scene,
-        () => {
-          const skinnedMesh = scene.meshes.find(m => m.skeleton);
-          const skeleton = skinnedMesh.skeleton;
-          const config = [
-            {
-              bones: ["RightArm", "LeftArm"],
-              size: 0.2,
-              width: 0.1,
-              rotationAxis: BABYLON.Axis.Z,
-              min: -45,
-              max: 45,
-              boxOffset: 0.15,
-              boneOffsetAxis: BABYLON.Axis.X,
-              joint: BABYLON.PhysicsJoint.HingeJoint
-            },
-          ];
-          const ragdoll = new Ragdoll(skeleton, skinnedMesh, config, true, false);
-          ragdoll.init();
-        }
-      );
+//── Ground ──────────────────────────────────────────────────
+const groundMat = new CANNON.Material();
+const groundBody = new CANNON.Body({
+  type: CANNON.Body.STATIC,
+  shape: new CANNON.Plane(),
+  material: groundMat
+});
+groundBody.quaternion.setFromEuler(-Math.PI/2, 0, 0);
+world.addBody(groundBody);
 
-      return scene;
-    };
+const groundGeo = new THREE.PlaneGeometry(20, 20);
+const groundMesh = new THREE.Mesh(
+  groundGeo,
+  new THREE.MeshStandardMaterial({ color: 0x555555 })
+);
+groundMesh.rotation.x = -Math.PI/2;
+scene.add(groundMesh);
 
-    const scene = createScene();
-    engine.runRenderLoop(() => scene.render());
-    window.addEventListener("resize", () => engine.resize());
-  </script>
+//── Helper: create a box segment ────────────────────────────
+function createLimb(size, mass, position) {
+  // Three.js mesh
+  const geo = new THREE.BoxGeometry(...size);
+  const mat = new THREE.MeshStandardMaterial({ color: 0x8888ff });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.castShadow = true;
+  scene.add(mesh);
+
+  // Cannon-es body
+  const shape = new CANNON.Box(new CANNON.Vec3(size[0]/2, size[1]/2, size[2]/2));
+  const body = new CANNON.Body({ mass, shape, position: new CANNON.Vec3(...position) });
+  body.linearDamping = 0.1;
+  world.addBody(body);
+
+  return { mesh, body };
+}
+
+//── Build a simple ragdoll ──────────────────────────────────
+const parts = {};
+// Torso
+parts.torso = createLimb([0.5, 1.2, 0.3], 5, [0, 2, 0]);
+// Head
+parts.head = createLimb([0.4, 0.4, 0.4], 1, [0, 2.9, 0]);
+
+// Upper arms
+parts.leftUpperArm  = createLimb([0.3, 0.7, 0.3], 1, [-0.55, 2.4, 0]);
+parts.rightUpperArm = createLimb([0.3, 0.7, 0.3], 1, [ 0.55, 2.4, 0]);
+
+// Lower arms
+parts.leftLowerArm  = createLimb([0.25, 0.6, 0.25], 1, [-0.55, 1.6, 0]);
+parts.rightLowerArm = createLimb([0.25, 0.6, 0.25], 1, [ 0.55, 1.6, 0]);
+
+// Upper legs
+parts.leftUpperLeg  = createLimb([0.35, 0.8, 0.35], 2, [-0.25, 1.0, 0]);
+parts.rightUpperLeg = createLimb([0.35, 0.8, 0.35], 2, [ 0.25, 1.0, 0]);
+
+// Lower legs
+parts.leftLowerLeg  = createLimb([0.3, 0.8, 0.3], 2, [-0.25, 0.2, 0]);
+parts.rightLowerLeg = createLimb([0.3, 0.8, 0.3], 2, [ 0.25, 0.2, 0]);
+
+//── Connect with point-to-point joints ───────────────────────
+function joint(a, pivotA, b, pivotB) {
+  world.addConstraint(
+    new CANNON.PointToPointConstraint(
+      a.body, new CANNON.Vec3(...pivotA),
+      b.body, new CANNON.Vec3(...pivotB),
+      0.5 // max force
+    )
+  );
+}
+
+// Neck
+joint(parts.torso,  [ 0, 0.65, 0], parts.head,  [0, -0.2, 0]);
+
+// Shoulders
+joint(parts.torso,  [-0.35, 0.5, 0], parts.leftUpperArm,  [0,  0.35, 0]);
+joint(parts.torso,  [ 0.35, 0.5, 0], parts.rightUpperArm, [0,  0.35, 0]);
+
+// Elbows
+joint(parts.leftUpperArm,  [0, -0.35, 0], parts.leftLowerArm,  [0, 0.35, 0]);
+joint(parts.rightUpperArm, [0, -0.35, 0], parts.rightLowerArm, [0, 0.35, 0]);
+
+// Hips
+joint(parts.torso,  [-0.2, -0.65, 0], parts.leftUpperLeg,  [0,  0.4, 0]);
+joint(parts.torso,  [ 0.2, -0.65, 0], parts.rightUpperLeg, [0,  0.4, 0]);
+
+// Knees
+joint(parts.leftUpperLeg,  [0, -0.4, 0], parts.leftLowerLeg,  [0, 0.4, 0]);
+joint(parts.rightUpperLeg, [0, -0.4, 0], parts.rightLowerLeg, [0, 0.4, 0]);
+
+//── Animation Loop ──────────────────────────────────────────
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.1);
+
+  world.step(1/60, dt, 3);
+  // sync meshes
+  for (let part of Object.values(parts)) {
+    part.mesh.position.copy(part.body.position);
+    part.mesh.quaternion.copy(part.body.quaternion);
+  }
+
+  renderer.render(scene, camera);
+}
+animate();
+
+//── Handle Resizing ─────────────────────────────────────────
+window.addEventListener('resize', () => {
+  renderer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+});
+</script>
 </body>
 </html>
