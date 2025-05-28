@@ -1,136 +1,30 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>Three.js + Cannon-es Ragdoll (no modules)</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- tiny blank favicon to kill the 404 -->
-  <link rel="icon" href="data:;base64,iVBORw0KGgo=">
-  <style>
-    body { margin: 0; overflow: hidden; }
-    canvas { display: block; }
-  </style>
+    <meta charset="UTF-8">
+    
+    <!-- Imporant meta information to make the page as rigid as possible on mobiles, to avoid unintentional zooming on the page itself  -->
+    <meta name="viewport" content="width=device-width, height=device-height, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Character Tutorial</title>
+    
 </head>
 <body>
-  <canvas id="c"></canvas>
-
-  <!-- load globally-bundled builds from CDN -->
-  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/js/controls/OrbitControls.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.umd.js"></script>
   
-  <script>
-    // ── Three.js setup ───────────────────────────────
-    const canvas = document.getElementById('c');
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x222222);
+  <!-- The loading element overlays all else until the model is loaded, at which point we remove this element from the DOM -->  
+<div class="loading" id="js-loader"><div class="loader"></div></div>
+  
+<div class="wrapper">
+    <!-- The canvas element is used to draw the 3D scene -->
+<canvas id="c"></canvas>
 
-    const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 1000);
-    camera.position.set(0,3,8);
-    new THREE.OrbitControls(camera, renderer.domElement);
-
-    scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 1));
-    const dir = new THREE.DirectionalLight(0xffffff, 0.8);
-    dir.position.set(5,10,2);
-    scene.add(dir);
-
-    // ── Cannon-es world ─────────────────────────────
-    const world = new CANNON.World();
-    world.gravity.set(0, -9.82, 0);
-    world.broadphase = new CANNON.SAPBroadphase(world);
-    world.allowSleep = true;
-
-    // ── Ground ───────────────────────────────────────
-    const groundMat = new CANNON.Material();
-    const groundBody = new CANNON.Body({
-      type: CANNON.Body.STATIC,
-      shape: new CANNON.Plane(),
-      material: groundMat
-    });
-    groundBody.quaternion.setFromEuler(-Math.PI/2, 0, 0);
-    world.addBody(groundBody);
-
-    const groundMesh = new THREE.Mesh(
-      new THREE.PlaneGeometry(20,20),
-      new THREE.MeshStandardMaterial({ color: 0x555555 })
-    );
-    groundMesh.rotation.x = -Math.PI/2;
-    scene.add(groundMesh);
-
-    // ── Helper: create a box limb ────────────────────
-    function createLimb(size, mass, pos) {
-      const geo = new THREE.BoxGeometry(size[0], size[1], size[2]);
-      const mat = new THREE.MeshStandardMaterial({ color:0x8888ff });
-      const mesh = new THREE.Mesh(geo, mat);
-      scene.add(mesh);
-
-      const halfExtents = new CANNON.Vec3(size[0]/2, size[1]/2, size[2]/2);
-      const shape = new CANNON.Box(halfExtents);
-      const body = new CANNON.Body({ mass, shape });
-      body.position.set(pos[0], pos[1], pos[2]);
-      body.linearDamping = 0.1;
-      world.addBody(body);
-
-      return { mesh, body };
-    }
-
-    // ── Build ragdoll parts ──────────────────────────
-    const parts = {
-      torso:    createLimb([0.5,1.2,0.3], 5, [0,2,0]),
-      head:     createLimb([0.4,0.4,0.4], 1, [0,2.9,0]),
-      leftUA:   createLimb([0.3,0.7,0.3], 1, [-0.55,2.4,0]),
-      rightUA:  createLimb([0.3,0.7,0.3], 1, [ 0.55,2.4,0]),
-      leftLA:   createLimb([0.25,0.6,0.25], 1, [-0.55,1.6,0]),
-      rightLA:  createLimb([0.25,0.6,0.25], 1, [ 0.55,1.6,0]),
-      leftULeg: createLimb([0.35,0.8,0.35], 2, [-0.25,1.0,0]),
-      rightULeg:createLimb([0.35,0.8,0.35], 2, [ 0.25,1.0,0]),
-      leftLLeg: createLimb([0.3,0.8,0.3], 2, [-0.25,0.2,0]),
-      rightLLeg:createLimb([0.3,0.8,0.3], 2, [ 0.25,0.2,0]),
-    };
-
-    // ── Helper: connect two bodies ───────────────────
-    function joint(a, b, pivotA, pivotB) {
-      const c = new CANNON.PointToPointConstraint(
-        a.body, new CANNON.Vec3(pivotA[0], pivotA[1], pivotA[2]),
-        b.body, new CANNON.Vec3(pivotB[0], pivotB[1], pivotB[2]),
-        0.5
-      );
-      world.addConstraint(c);
-    }
-
-    // ── Joints ───────────────────────────────────────
-    joint(parts.torso,   parts.head,    [0,0.65,0],  [0,-0.2,0]);
-    joint(parts.torso,   parts.leftUA,  [-0.35,0.5,0],[0, 0.35,0]);
-    joint(parts.torso,   parts.rightUA, [ 0.35,0.5,0],[0, 0.35,0]);
-    joint(parts.leftUA,  parts.leftLA,  [0,-0.35,0], [0, 0.35,0]);
-    joint(parts.rightUA, parts.rightLA, [0,-0.35,0], [0, 0.35,0]);
-    joint(parts.torso,   parts.leftULeg,[-0.2,-0.65,0],[0, 0.4,0]);
-    joint(parts.torso,   parts.rightULeg,[ 0.2,-0.65,0],[0, 0.4,0]);
-    joint(parts.leftULeg, parts.leftLLeg,[0,-0.4,0],   [0, 0.4,0]);
-    joint(parts.rightULeg,parts.rightLLeg,[0,-0.4,0],  [0, 0.4,0]);
-
-    // ── Render loop ─────────────────────────────────
-    const clock = new THREE.Clock();
-    (function animate(){
-      requestAnimationFrame(animate);
-      const dt = Math.min(clock.getDelta(), 0.1);
-      world.step(1/60, dt, 3);
-
-      for (let key in parts) {
-        parts[key].mesh.position.copy(parts[key].body.position);
-        parts[key].mesh.quaternion.copy(parts[key].body.quaternion);
-      }
-      renderer.render(scene, camera);
-    })();
-
-    // ── Resize ───────────────────────────────────────
-    window.addEventListener('resize', () => {
-      renderer.setSize(window.innerWidth, window.innerHeight);
-      camera.aspect = window.innerWidth/window.innerHeight;
-      camera.updateProjectionMatrix();
-    });
-  </script>
+</div>
 </body>
 </html>
+
+<!-- The main Three.js file -->
+<script src='https://cdnjs.cloudflare.com/ajax/libs/three.js/108/three.min.js'></script>
+
+<!-- This brings in the ability to load custom 3D objects in the .gltf file format. Blender allows the ability to export to this format out the box -->
+<script src='https://cdn.jsdelivr.net/gh/mrdoob/Three.js@r92/examples/js/loaders/GLTFLoader.js'></script>
