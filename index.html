@@ -10,8 +10,8 @@
   </style>
   <!-- Babylon core -->
   <script src="https://cdn.babylonjs.com/babylon.js"></script>
-  <!-- Oimo.js physics plugin -->
-  <script src="https://cdn.babylonjs.com/oimo.js"></script>
+  <!-- Correct Oimo.js physics engine (defines global OIMO) -->
+  <script src="https://preview.babylonjs.com/Oimo.js"></script>
   <!-- Ragdoll.js library from the GitHub repo -->
   <script src="https://cdn.jsdelivr.net/gh/jongomez/ragdoll.js@main/ragdoll.js"></script>
 </head>
@@ -24,10 +24,10 @@
     const createScene = () => {
       const scene = new BABYLON.Scene(engine);
 
-      // enable physics with OimoJS
+      // enable physics with OimoJS, injecting the global OIMO
       scene.enablePhysics(
         new BABYLON.Vector3(0, -9.81, 0),
-        new BABYLON.OimoJSPlugin()
+        new BABYLON.OimoJSPlugin(undefined, OIMO)
       );
 
       // camera & light
@@ -61,11 +61,8 @@
         "vita.glb",
         scene,
         () => {
-          // assume the first mesh is our skinned mesh
           const skinnedMesh = scene.meshes.find(m => m.skeleton);
           const skeleton = skinnedMesh.skeleton;
-
-          // example config—add entries for each bone you want to physics-box
           const config = [
             {
               bones: ["RightArm", "LeftArm"],
@@ -78,10 +75,7 @@
               boneOffsetAxis: BABYLON.Axis.X,
               joint: BABYLON.PhysicsJoint.HingeJoint
             },
-            // …add more config objects here for spine, legs, head, etc.
           ];
-
-          // initialize the ragdoll: (skeleton, mesh, config, showBoxes, disableSync)
           const ragdoll = new Ragdoll(skeleton, skinnedMesh, config, true, false);
           ragdoll.init();
         }
@@ -91,9 +85,7 @@
     };
 
     const scene = createScene();
-    engine.runRenderLoop(() => {
-      scene.render();
-    });
+    engine.runRenderLoop(() => scene.render());
     window.addEventListener("resize", () => engine.resize());
   </script>
 </body>
