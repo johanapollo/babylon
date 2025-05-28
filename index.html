@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Babylon.js Ragdoll Demo</title>
+  <style>
+    html, body, #renderCanvas {
+      width: 100%; height: 100%; margin: 0; padding: 0; overflow: hidden;
+    }
+  </style>
+  <!-- Babylon core -->
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <!-- Oimo.js physics plugin -->
+  <script src="https://cdn.babylonjs.com/oimo.js"></script>
+  <!-- Ragdoll.js library from the GitHub repo -->
+  <script src="https://cdn.jsdelivr.net/gh/jongomez/ragdoll.js@main/ragdoll.js"></script>
+</head>
+<body>
+  <canvas id="renderCanvas"></canvas>
+  <script>
+    const canvas = document.getElementById("renderCanvas");
+    const engine = new BABYLON.Engine(canvas, true);
+
+    const createScene = () => {
+      const scene = new BABYLON.Scene(engine);
+
+      // enable physics with OimoJS
+      scene.enablePhysics(
+        new BABYLON.Vector3(0, -9.81, 0),
+        new BABYLON.OimoJSPlugin()
+      );
+
+      // camera & light
+      const camera = new BABYLON.ArcRotateCamera(
+        "cam",
+        -Math.PI / 2,
+        Math.PI / 2.5,
+        10,
+        BABYLON.Vector3.Zero(),
+        scene
+      );
+      camera.attachControl(canvas, true);
+      new BABYLON.HemisphericLight("hemi", new BABYLON.Vector3(0, 1, 0), scene);
+
+      // ground
+      const ground = BABYLON.MeshBuilder.CreateGround(
+        "ground",
+        { width: 20, height: 20 },
+        scene
+      );
+      ground.physicsImpostor = new BABYLON.PhysicsImpostor(
+        ground,
+        BABYLON.PhysicsImpostor.BoxImpostor,
+        { mass: 0, restitution: 0.5 },
+        scene
+      );
+
+      // load the Vita model (VRoid) and set up ragdoll
+      BABYLON.SceneLoader.Append(
+        "https://cdn.jsdelivr.net/gh/jongomez/ragdoll.js@main/model/",
+        "vita.glb",
+        scene,
+        () => {
+          // assume the first mesh is our skinned mesh
+          const skinnedMesh = scene.meshes.find(m => m.skeleton);
+          const skeleton = skinnedMesh.skeleton;
+
+          // example config—add entries for each bone you want to physics-box
+          const config = [
+            {
+              bones: ["RightArm", "LeftArm"],
+              size: 0.2,
+              width: 0.1,
+              rotationAxis: BABYLON.Axis.Z,
+              min: -45,
+              max: 45,
+              boxOffset: 0.15,
+              boneOffsetAxis: BABYLON.Axis.X,
+              joint: BABYLON.PhysicsJoint.HingeJoint
+            },
+            // …add more config objects here for spine, legs, head, etc.
+          ];
+
+          // initialize the ragdoll: (skeleton, mesh, config, showBoxes, disableSync)
+          const ragdoll = new Ragdoll(skeleton, skinnedMesh, config, true, false);
+          ragdoll.init();
+        }
+      );
+
+      return scene;
+    };
+
+    const scene = createScene();
+    engine.runRenderLoop(() => {
+      scene.render();
+    });
+    window.addEventListener("resize", () => engine.resize());
+  </script>
+</body>
+</html>
